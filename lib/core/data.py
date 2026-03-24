@@ -86,6 +86,7 @@ options: dict[str, Any] = {
     "replay_proxy": None,
     "tor": None,
     "scheme": None,
+    "tls_mode": "auto",
     "max_rate": 0,
     "max_retries": 1,
     "network_interface": None,

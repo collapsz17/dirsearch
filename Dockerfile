@@ -1,17 +1,21 @@
-FROM python:3.11.6-alpine
+FROM metascan/alpine-sslv3:latest
 LABEL maintainer="maurosoria@protonmail.com"
 
 WORKDIR /root/
 ADD . /root/
 
-RUN apk add \
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
     gcc \
     musl-dev \
     libffi-dev \
     openssl-dev \
     libffi-dev
 
-RUN pip install -r requirements.txt
+RUN ln -sf /usr/bin/python3 /usr/bin/python
+
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 RUN chmod +x dirsearch.py
 
 ENTRYPOINT ["./dirsearch.py"]

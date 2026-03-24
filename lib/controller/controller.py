@@ -519,17 +519,23 @@ class Controller:
             cache_dns(parsed.hostname, port, options["ip"])
 
         try:
-            # If no scheme is found, detect it by port number
-            scheme = (
-                parsed.scheme
-                if parsed.scheme != UNKNOWN
-                else detect_scheme(parsed.hostname, port)
-            )
+            if parsed.scheme != UNKNOWN:
+                scheme = parsed.scheme
+            elif options["tls_mode"] in ("sslv3", "gost"):
+                scheme = "https"
+                port = port or STANDARD_PORTS[scheme]
+            else:
+                # If no scheme is found, detect it by port number
+                scheme = detect_scheme(parsed.hostname, port)
         except ValueError:
-            # If the user neither provides the port nor scheme, guess them based
-            # on standard website characteristics
-            scheme = detect_scheme(parsed.hostname, 443)
-            port = STANDARD_PORTS[scheme]
+            if options["tls_mode"] in ("sslv3", "gost"):
+                scheme = "https"
+                port = STANDARD_PORTS[scheme]
+            else:
+                # If the user neither provides the port nor scheme, guess them based
+                # on standard website characteristics
+                scheme = detect_scheme(parsed.hostname, 443)
+                port = STANDARD_PORTS[scheme]
 
         self.url = f"{scheme}://{parsed.hostname}"
 

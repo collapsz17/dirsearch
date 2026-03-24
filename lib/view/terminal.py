@@ -36,6 +36,7 @@ class CLI:
     def __init__(self):
         self.last_in_line = False
         self.buffer = ""
+        self.supports_inline = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 
         if not options["color"]:
             disable_color()
@@ -113,6 +114,9 @@ class CLI:
         self.new_line(message)
 
     def last_path(self, index, length, current_job, all_jobs, rate, errors):
+        if not self.supports_inline:
+            return
+
         percentage = int(index / length * 100)
         task = set_color("#", fore="cyan", style="bright") * int(percentage / 5)
         task += " " * (20 - int(percentage / 5))

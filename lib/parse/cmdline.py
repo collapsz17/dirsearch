@@ -489,6 +489,13 @@ def parse_arguments() -> Values:
         help="Scheme for raw request or if there is no scheme in the URL (Default: auto-detect)",
     )
     connection.add_option(
+        "--tls-mode",
+        action="store",
+        dest="tls_mode",
+        metavar="MODE",
+        help="TLS transport mode for HTTPS targets (auto, sslv3, gost)",
+    )
+    connection.add_option(
         "--max-rate",
         action="store",
         type="int",

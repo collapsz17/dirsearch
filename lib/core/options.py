@@ -256,6 +256,28 @@ def parse_options() -> dict[str, Any]:
         )
         sys.exit(1)
 
+    opt.tls_mode = (opt.tls_mode or "auto").lower()
+    if opt.tls_mode not in ("auto", "sslv3", "gost"):
+        print("TLS mode must be one of: auto, sslv3, gost")
+        sys.exit(1)
+
+    if opt.tls_mode != "auto":
+        if opt.proxies:
+            print("Proxies are not supported with --tls-mode sslv3/gost")
+            sys.exit(1)
+        if opt.replay_proxy:
+            print("Replay proxy is not supported with --tls-mode sslv3/gost")
+            sys.exit(1)
+        if opt.network_interface:
+            print("Network interface binding is not supported with --tls-mode sslv3/gost")
+            sys.exit(1)
+        if opt.cert_file or opt.key_file:
+            print("Client certificates are not supported with --tls-mode sslv3/gost")
+            sys.exit(1)
+        if opt.auth_type in ("digest", "ntlm"):
+            print("Digest and NTLM authentication are not supported with --tls-mode sslv3/gost")
+            sys.exit(1)
+
     if set(opt.extensions).intersection(opt.exclude_extensions):
         print(
             "Exclude extension list can not contain any extension "
@@ -531,6 +553,9 @@ def merge_config(opt: Values) -> Values:
     opt.proxies_file = opt.proxies_file or config.safe_get("connection", "proxies-file")
     opt.scheme = opt.scheme or config.safe_get(
         "connection", "scheme", None, ("http", "https")
+    )
+    opt.tls_mode = opt.tls_mode or config.safe_get(
+        "connection", "tls-mode", "auto", ("auto", "sslv3", "gost")
     )
     opt.replay_proxy = opt.replay_proxy or config.safe_get("connection", "replay-proxy")
     opt.network_interface = opt.network_interface or config.safe_get(

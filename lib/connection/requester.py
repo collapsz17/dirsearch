@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import http.client
 import random
 import re
@@ -38,6 +39,7 @@ from httpx_ntlm import HttpNtlmAuth as HttpxNtlmAuth
 from requests_toolbelt.adapters.socket_options import SocketOptionsAdapter
 
 from lib.connection.dns import cached_getaddrinfo
+from lib.connection.openssl import DIRECT_TLS_MODES, send_request as send_openssl_request
 from lib.connection.response import AsyncResponse, Response
 from lib.core.data import options
 from lib.core.decorators import cached
@@ -89,6 +91,20 @@ class BaseRequester:
         # Guess the mime type of request data if not specified
         if options["data"] and "content-type" not in self.headers:
             self.set_header("content-type", guess_mimetype(options["data"]))
+
+    def use_direct_tls_mode(self, url: str) -> bool:
+        return options["tls_mode"] in DIRECT_TLS_MODES and url.startswith("https://")
+
+    def legacy_headers(self) -> CaseInsensitiveDict:
+        headers = CaseInsensitiveDict(self.headers)
+        auth_type = options["auth_type"]
+        if "authorization" not in headers and options["auth"]:
+            if auth_type in ("bearer", "jwt"):
+                headers["authorization"] = f'Bearer {options["auth"]}'
+            elif auth_type == "basic":
+                token = base64.b64encode(options["auth"].encode("utf-8")).decode("ascii")
+                headers["authorization"] = f"Basic {token}"
+        return headers
 
     def _fetch_agents(self) -> None:
         self.agents = FileUtils.get_lines(
@@ -178,44 +194,57 @@ class Requester(BaseRequester):
         # Why using a loop instead of max_retries argument? Check issue #1009
         for _ in range(options["max_retries"] + 1):
             try:
-                proxies = {}
-                try:
-                    proxy_url = proxy or random.choice(options["proxies"])
-                    if not proxy_url.startswith(PROXY_SCHEMES):
-                        proxy_url = f"http://{proxy_url}"
-
-                    if self.proxy_cred and "@" not in proxy_url:
-                        # socks5://localhost:9050 => socks5://[credential]@localhost:9050
-                        proxy_url = proxy_url.replace("://", f"://{self.proxy_cred}@", 1)
-
-                    proxies["https"] = proxy_url
-                    if not proxy_url.startswith("https://"):
-                        proxies["http"] = proxy_url
-                except IndexError:
-                    pass
-
                 if self.agents:
                     self.set_header("user-agent", random.choice(self.agents))
 
-                # Use prepared request to avoid the URL path from being normalized
-                # Reference: https://github.com/psf/requests/issues/5289
-                request = requests.Request(
-                    options["http_method"],
-                    url,
-                    headers=self.headers,
-                    data=options["data"],
-                )
-                prep = self.session.prepare_request(request)
-                prep.url = url
+                if self.use_direct_tls_mode(url):
+                    origin_response = send_openssl_request(
+                        url,
+                        options["http_method"],
+                        self.legacy_headers(),
+                        options["data"],
+                        options["timeout"],
+                        options["tls_mode"],
+                        follow_redirects=options["follow_redirects"],
+                        connect_host=options["ip"],
+                    )
+                    response = Response(url, origin_response)
+                else:
+                    proxies = {}
+                    try:
+                        proxy_url = proxy or random.choice(options["proxies"])
+                        if not proxy_url.startswith(PROXY_SCHEMES):
+                            proxy_url = f"http://{proxy_url}"
 
-                origin_response = self.session.send(
-                    prep,
-                    allow_redirects=options["follow_redirects"],
-                    timeout=options["timeout"],
-                    proxies=proxies,
-                    stream=True,
-                )
-                response = Response(url, origin_response)
+                        if self.proxy_cred and "@" not in proxy_url:
+                            # socks5://localhost:9050 => socks5://[credential]@localhost:9050
+                            proxy_url = proxy_url.replace("://", f"://{self.proxy_cred}@", 1)
+
+                        proxies["https"] = proxy_url
+                        if not proxy_url.startswith("https://"):
+                            proxies["http"] = proxy_url
+                    except IndexError:
+                        pass
+
+                    # Use prepared request to avoid the URL path from being normalized
+                    # Reference: https://github.com/psf/requests/issues/5289
+                    request = requests.Request(
+                        options["http_method"],
+                        url,
+                        headers=self.headers,
+                        data=options["data"],
+                    )
+                    prep = self.session.prepare_request(request)
+                    prep.url = url
+
+                    origin_response = self.session.send(
+                        prep,
+                        allow_redirects=options["follow_redirects"],
+                        timeout=options["timeout"],
+                        proxies=proxies,
+                        stream=True,
+                    )
+                    response = Response(url, origin_response)
 
                 log_msg = f'"{options["http_method"]} {response.url}" {response.status} - {response.length}B'
 
@@ -251,6 +280,8 @@ class Requester(BaseRequester):
                     err_msg = f"Cannot connect to: {urlparse(url).netloc}"
                 elif re.search(READ_RESPONSE_ERROR_REGEX, str(e)):
                     err_msg = f"Failed to read response body: {url}"
+                elif isinstance(e, RequestException):
+                    err_msg = str(e)
                 elif "Timeout" in str(e) or e in (
                     http.client.IncompleteRead,
                     socket.timeout,
@@ -373,22 +404,36 @@ class AsyncRequester(BaseRequester):
                 if self.agents:
                     self.set_header("user-agent", random.choice(self.agents))
 
-                # Use "target" extension to avoid the URL path from being normalized
-                request = session.build_request(
-                    options["http_method"],
-                    url,
-                    headers=self.headers,
-                    data=options["data"],
-                    extensions={"target": (url if replay else f"/{safequote(path)}").encode()},
-                )
+                if self.use_direct_tls_mode(url):
+                    openssl_response = await asyncio.to_thread(
+                        send_openssl_request,
+                        url,
+                        options["http_method"],
+                        self.legacy_headers(),
+                        options["data"],
+                        options["timeout"],
+                        options["tls_mode"],
+                        options["follow_redirects"],
+                        options["ip"],
+                    )
+                    response = await AsyncResponse.create(url, openssl_response)
+                else:
+                    # Use "target" extension to avoid the URL path from being normalized
+                    request = session.build_request(
+                        options["http_method"],
+                        url,
+                        headers=self.headers,
+                        data=options["data"],
+                        extensions={"target": (url if replay else f"/{safequote(path)}").encode()},
+                    )
 
-                xresponse = await session.send(
-                    request,
-                    stream=True,
-                    follow_redirects=options["follow_redirects"],
-                )
-                response = await AsyncResponse.create(url, xresponse)
-                await xresponse.aclose()
+                    xresponse = await session.send(
+                        request,
+                        stream=True,
+                        follow_redirects=options["follow_redirects"],
+                    )
+                    response = await AsyncResponse.create(url, xresponse)
+                    await xresponse.aclose()
 
                 log_msg = f'"{options["http_method"]} {response.url}" {response.status} - {response.length}B'
 
@@ -419,6 +464,8 @@ class AsyncRequester(BaseRequester):
                     err_msg = f"Request timeout: {url}"
                 elif isinstance(e, httpx.ReadError) or isinstance(e, httpx.DecodingError):  # not sure
                     err_msg = f"Failed to read response body: {url}"
+                elif isinstance(e, RequestException):
+                    err_msg = str(e)
                 else:
                     err_msg = f"There was a problem in the request to: {url}"
 
