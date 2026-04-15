@@ -271,12 +271,13 @@ def parse_options() -> dict[str, Any]:
         if opt.network_interface:
             print("Network interface binding is not supported with --tls-mode sslv3/gost")
             sys.exit(1)
-        if opt.cert_file or opt.key_file:
-            print("Client certificates are not supported with --tls-mode sslv3/gost")
-            sys.exit(1)
         if opt.auth_type in ("digest", "ntlm"):
             print("Digest and NTLM authentication are not supported with --tls-mode sslv3/gost")
             sys.exit(1)
+
+    if opt.key_file and not opt.cert_file:
+        print("--key-file requires --cert-file")
+        sys.exit(1)
 
     if set(opt.extensions).intersection(opt.exclude_extensions):
         print(

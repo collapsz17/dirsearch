@@ -285,9 +285,9 @@ Options:
     --auth=CREDENTIAL   Authentication credential (e.g. user:password or
                         bearer token)
     --auth-type=TYPE    Authentication type (basic, digest, bearer, ntlm, jwt)
-    --cert-file=PATH    File contains client-side certificate
+    --cert-file=PATH    File contains client-side certificate or PEM bundle
     --key-file=PATH     File contains client-side certificate private key
-                        (unencrypted)
+                        (unencrypted, also used with --tls-mode gost)
     --user-agent=USER_AGENT
     --cookie=COOKIE
 

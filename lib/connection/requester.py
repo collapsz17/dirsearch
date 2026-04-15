@@ -72,8 +72,10 @@ class BaseRequester:
         self.session = None
 
         self._cert = None
-        if options["cert_file"] and options["key_file"]:
-            self._cert = (options["cert_file"], options["key_file"])
+        if options["cert_file"]:
+            self._cert = options["cert_file"]
+            if options["key_file"]:
+                self._cert = (options["cert_file"], options["key_file"])
 
         self._socket_options = []
         if options["network_interface"]:
@@ -207,6 +209,8 @@ class Requester(BaseRequester):
                         options["tls_mode"],
                         follow_redirects=options["follow_redirects"],
                         connect_host=options["ip"],
+                        cert_file=options["cert_file"],
+                        key_file=options["key_file"],
                     )
                     response = Response(url, origin_response)
                 else:
@@ -415,6 +419,8 @@ class AsyncRequester(BaseRequester):
                         options["tls_mode"],
                         options["follow_redirects"],
                         options["ip"],
+                        options["cert_file"],
+                        options["key_file"],
                     )
                     response = await AsyncResponse.create(url, openssl_response)
                 else:

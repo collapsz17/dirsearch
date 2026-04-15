@@ -421,7 +421,7 @@ def parse_arguments() -> Values:
         action="store",
         dest="cert_file",
         metavar="PATH",
-        help="File contains client-side certificate",
+        help="File contains client-side certificate or PEM bundle",
     )
     request.add_option(
         "--key-file",

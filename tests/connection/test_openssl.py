@@ -27,6 +27,17 @@ class TestOpenSSLTransport(unittest.TestCase):
         self.assertIn("gost", args)
         self.assertIn("-legacy_server_connect", args)
 
+    def test_build_openssl_args_with_client_certificate(self):
+        args = build_openssl_args(
+            "example.com:443",
+            "example.com",
+            "gost",
+            "/tmp/client.pem",
+            "/tmp/client.key",
+        )
+        self.assertEqual(args[args.index("-cert") + 1], "/tmp/client.pem")
+        self.assertEqual(args[args.index("-key") + 1], "/tmp/client.key")
+
     def test_build_http_request_sets_required_headers(self):
         request = build_http_request(
             "https://example.com/test?q=1",

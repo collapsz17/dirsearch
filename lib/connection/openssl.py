@@ -54,7 +54,13 @@ class OpenSSLResponse:
             yield chunk
 
 
-def build_openssl_args(address: str, server_name: str, tls_mode: str) -> list[str]:
+def build_openssl_args(
+    address: str,
+    server_name: str,
+    tls_mode: str,
+    cert_file: str | None = None,
+    key_file: str | None = None,
+) -> list[str]:
     args = [
         "openssl",
         "s_client",
@@ -81,6 +87,12 @@ def build_openssl_args(address: str, server_name: str, tls_mode: str) -> list[st
     else:
         raise ValueError(f"Unsupported TLS mode: {tls_mode}")
 
+    if cert_file:
+        args.extend(["-cert", cert_file])
+
+    if key_file:
+        args.extend(["-key", key_file])
+
     return args
 
 
@@ -93,6 +105,8 @@ def send_request(
     tls_mode: str,
     follow_redirects: bool = False,
     connect_host: str | None = None,
+    cert_file: str | None = None,
+    key_file: str | None = None,
 ) -> OpenSSLResponse:
     current_url = url
     history: list[HistoryEntry] = []
@@ -106,6 +120,8 @@ def send_request(
             timeout,
             tls_mode,
             connect_host=connect_host,
+            cert_file=cert_file,
+            key_file=key_file,
         )
         response.history = history.copy()
 
@@ -135,6 +151,8 @@ def _send_single_request(
     timeout: float,
     tls_mode: str,
     connect_host: str | None = None,
+    cert_file: str | None = None,
+    key_file: str | None = None,
 ) -> OpenSSLResponse:
     parsed = urlparse(url)
     if parsed.scheme != "https":
@@ -146,7 +164,7 @@ def _send_single_request(
 
     try:
         completed = subprocess.run(
-            build_openssl_args(address, server_name, tls_mode),
+            build_openssl_args(address, server_name, tls_mode, cert_file, key_file),
             input=request_bytes,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
